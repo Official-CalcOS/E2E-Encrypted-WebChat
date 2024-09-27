@@ -1,0 +1,11 @@
+{
+  "jack": {
+    "password": "$2b$10$6SxJX9sFedwsmldvOgx0e.NyP5vwMjNCKt7ginYyxx5KyLUOf4Rai"
+  },
+  "jack2": {
+    "password": "$2b$10$aUYFnCly8ZEb9eQcMWkLtO/sAppUNoMeuVjb2BDlUKV5WatXNP1yC"
+  },
+  "test": {
+    "password": "$2b$10$xPeBsIy98aTdUNmKhjUQq.bpuy11x0b4Wj6A2mDjLq7Rix.dFKc0m"
+  }
+}

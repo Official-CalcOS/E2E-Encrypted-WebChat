@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Anonymous Chat</title>
+    <link rel="icon" type="image/x-icon" href="/images/favicon.ico">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- Sidebar for active users -->
+    <div id="user-sidebar" class="sidebar">
+        <h2>Active Users</h2>
+        <ul id="user-list"></ul>
+    </div>
+
+    <!-- Button to toggle the sidebar -->
+   <!--<button id="toggle-users-btn" class="toggle-btn">Users</button> -->
+
+    <div class="chat-container">
+        <div id="login-section" class="login-section">
+            <input type="text" id="username-input" placeholder="Enter your username" />
+            <input type="password" id="password-input" placeholder="Password (optional)" />
+            <button id="join-button">Join Chat</button>
+            <button id="generate-username-button">Generate Random Username</button>
+            <p id="error-message" style="color: red;"></p>
+        </div>
+
+        <div id="chat-section" class="chat-section" style="display:none;">
+            <div class="chat-box" id="chat-box">
+                <!-- Chat messages will appear here -->
+            </div>
+
+            <div class="input-section">
+                <input type="text" id="secret-key-input" placeholder="Encryption key (optional)" />
+                <input type="text" id="message-input" placeholder="Type your message here" />
+                <button id="send-button">Send</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Disclaimer section -->
+    <div class="disclaimer">
+        <p><strong>About this service:</strong> This is a public chat interface. All messages are deleted after 30 minutes. All messages are encrypted on the client side before being sent to the server and are only stored within memory.</p>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/crypto-js@3.1.9-1/crypto-js.js"></script>
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        const socket = io();
+        let username = null;
+
+        // Function to generate a random username
+        function generateRandomUsername() {
+            return `User${Math.floor(Math.random() * 10000)}`;
+        }
+
+        // Handle joining the chat
+        document.getElementById('join-button').addEventListener('click', () => {
+            const requestedUsername = document.getElementById('username-input').value;
+            const password = document.getElementById('password-input').value;
+
+            if (requestedUsername.trim() === '') {
+                document.getElementById('error-message').textContent = 'Please enter a username.';
+                return;
+            }
+
+            // Send join request to the server
+            socket.emit('join', { requestedUsername, password });
+        });
+
+        // Generate a random username on button click
+        document.getElementById('generate-username-button').addEventListener('click', () => {
+            const randomUsername = generateRandomUsername();
+            document.getElementById('username-input').value = randomUsername;
+        });
+
+        // Handle username taken error
+        socket.on('usernameTaken', (message) => {
+            document.getElementById('error-message').textContent = message;
+        });
+
+        // Handle assigned username from the server
+        socket.on('userAssigned', (assignedUsername) => {
+            username = assignedUsername;
+            document.getElementById('login-section').style.display = 'none';
+            document.getElementById('chat-section').style.display = 'block';
+            document.getElementById('error-message').textContent = '';
+        });
+
+        // Handle sending a message
+        document.getElementById('send-button').addEventListener('click', () => {
+            const secretKeyInput = document.getElementById('secret-key-input').value; // Optional encryption key
+            const messageInput = document.getElementById('message-input').value;
+
+            if (messageInput.trim() === '') return; // Don't send empty messages
+
+            let messageToSend = messageInput;
+
+            // Encrypt the message if a key is provided
+            const hasEncryptionKey = secretKeyInput.trim() !== '';
+            if (hasEncryptionKey) {
+                messageToSend = CryptoJS.AES.encrypt(messageInput, secretKeyInput).toString();
+            }
+
+            // Display your own message immediately (show the original message, not encrypted)
+            displayMessage(username, messageInput);  
+
+            // Send the encrypted (or plain) message to the server
+            socket.emit('sendMessage', {
+                username: username,
+                message: messageToSend,
+                hasEncryptionKey: hasEncryptionKey // Indicate if the sender has a key
+            });
+
+            document.getElementById('message-input').value = ''; // Clear the input
+        });
+
+        // Receive messages from other users
+        socket.on('receiveMessage', (data) => {
+            const secretKeyInput = document.getElementById('secret-key-input').value; // User's encryption key
+
+            let displayMessageContent;
+
+            // If sender has encryption key
+            if (data.hasEncryptionKey) {
+                if (secretKeyInput.trim() !== '') {
+                    try {
+                        // Decrypt the message
+                        const bytes = CryptoJS.AES.decrypt(data.message, secretKeyInput);
+                        displayMessageContent = bytes.toString(CryptoJS.enc.Utf8);
+                        // If decryption results in an empty string, show the default message
+                        if (displayMessageContent === '') {
+                            displayMessageContent = '(Secret Message - Adjust your key to view)'; 
+                        }
+                    } catch (e) {
+                        displayMessageContent = '(Secret Message - Adjust your key to view)'; // Show default text if an error occurs
+                    }
+                } else {
+                    displayMessageContent = '(Secret Message - Adjust your key to view)'; // Show default text if no key provided
+                }
+            } else {
+                // Sender did not use encryption
+                displayMessageContent = data.message; // Display the original message
+            }
+
+            // Display the received message
+            displayMessage(data.username, displayMessageContent);
+        });
+
+        // Function to display a message in the chat box
+        function displayMessage(username, message) {
+            const chatBox = document.getElementById('chat-box');
+            const messageElement = document.createElement('div');
+            messageElement.textContent = `${username}: ${message}`;
+            chatBox.appendChild(messageElement);
+            chatBox.scrollTop = chatBox.scrollHeight; // Scroll to the latest message
+        }
+
+        // Toggle the user sidebar
+        const toggleUsersBtn = document.getElementById('toggle-users-btn');
+        const userSidebar = document.getElementById('user-sidebar');
+
+        toggleUsersBtn.addEventListener('click', () => {
+            userSidebar.classList.toggle('show');
+        });
+
+        // Update active users list when the server sends the update
+        socket.on('updateUserList', (activeUsers) => {
+            const userList = document.getElementById('user-list');
+            userList.innerHTML = ''; // Clear the list first
+
+            activeUsers.forEach(user => {
+                const listItem = document.createElement('li');
+                listItem.textContent = `${user.username} (Joined: ${user.joinDate})`;
+                userList.appendChild(listItem);
+            });
+        });
+    </script>
+</body>
+</html>
+
